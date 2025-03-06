@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.subcommands
 import kotlinx.collections.immutable.PersistentList
 import kotlinx.collections.immutable.plus
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 
 fun main(args: Array<String>) = Ctt.main(args)
@@ -22,15 +23,17 @@ sealed class Surface {
     abstract val range: Range
 
     data class Type(override val range: Range) : Surface()
-    data class Func(val name: String, val param: Surface, val result: Surface, override val range: Range) : Surface()
-    data class FuncOf(val name: String, val result: Surface, override val range: Range) : Surface()
+    data class Func(val name: Name, val param: Surface, val result: Surface, override val range: Range) : Surface()
+    data class FuncOf(val name: Name, val result: Surface, override val range: Range) : Surface()
     data class Call(val operator: Surface, val operand: Surface, override val range: Range) : Surface()
     data class Closed(val element: Surface, override val range: Range) : Surface()
     data class Close(val element: Surface, override val range: Range) : Surface()
     data class Open(val element: Surface, override val range: Range) : Surface()
-    data class Let(val name: String, val init: Surface, val anno: Surface, val body: Surface, override val range: Range) : Surface()
-    data class Var(val name: String, override val range: Range) : Surface()
+    data class Let(val name: Name, val init: Surface, val anno: Surface, val body: Surface, override val range: Range) : Surface()
+    data class Var(val name: Name, override val range: Range) : Surface()
     data class Hole(override val range: Range) : Surface()
+
+    data class Name(val text: String, val range: Range)
 }
 
 sealed class Core {
@@ -58,15 +61,179 @@ sealed class Value {
     data object Hole : Value()
 }
 
+class Reporter {
+    private val diagnostics: MutableList<Diagnostic> = mutableListOf()
+    fun report(range: Range, message: String) = diagnostics.add(Diagnostic(range, message))
+}
+
+class Parser(private val reporter: Reporter, private val text: String) {
+    private val length: Int = text.length
+    private var cursor: Int = 0
+    private var line: Int = 0
+    private var character: Int = 0
+
+    fun parse(): Surface {
+        val surface = parseSurface()
+        skipWhitespace()
+        if (cursor < length) {
+            reporter.report(Range(here(), here()), "Expected end of file")
+        }
+        return surface
+    }
+
+    private fun parseSurface(): Surface {
+        return if (cursor < length) {
+            skipWhitespace()
+            from {
+                when (text[cursor]) {
+                    '(' -> {
+                        skipCharacters()
+                        val surface = parseSurface()
+                        expect(")")
+                        surface
+                    }
+                    '{' -> {
+                        skipCharacters()
+                        val name = parseName()
+                        expect("->")
+                        val result = parseSurface()
+                        expect("}")
+                        Surface.FuncOf(name, result, until())
+                    }
+                    else -> {
+                        val name = parseName()
+                        when (name.text) {
+                            "Type" -> Surface.Type(until())
+                            "Func" -> {
+                                expect("(")
+                                val name = parseName()
+                                expect(":")
+                                val param = parseSurface()
+                                expect(")")
+                                expect("->")
+                                val result = parseSurface()
+                                Surface.Func(name, param, result, until())
+                            }
+                            "Closed" -> {
+                                val element = parseSurface()
+                                Surface.Closed(element, until())
+                            }
+                            "close" -> {
+                                expect("{")
+                                val element = parseSurface()
+                                expect("}")
+                                Surface.Close(element, until())
+                            }
+                            "open" -> {
+                                expect("{")
+                                val element = parseSurface()
+                                expect("}")
+                                Surface.Open(element, until())
+                            }
+                            "let" -> {
+                                val name = parseName()
+                                expect(":")
+                                val anno = parseSurface()
+                                expect("=")
+                                val init = parseSurface()
+                                expect(";")
+                                val body = parseSurface()
+                                Surface.Let(name, anno, init, body, until())
+                            }
+                            else -> Surface.Var(name, until())
+                        }
+                    }
+                }
+            }
+        } else {
+            val range = Range(here(), here())
+            reporter.report(range, "Unexpected end of file")
+            Surface.Hole(range)
+        }
+    }
+
+    private fun parseName(): Surface.Name = from {
+        val name = parseWord()
+        Surface.Name(name, until())
+    }
+
+    private fun parseWord(): String {
+        skipWhitespace()
+        val start = cursor
+        while (
+            cursor < length && when (text[cursor]) {
+                ' ', '\t', '\n', '\r', '-', '(', ')', ':', '{', '}', '=', ';' -> false
+                else -> true
+            }
+        ) {
+            skipCharacters()
+        }
+        return text.substring(start, cursor)
+    }
+
+    private fun expect(string: String) {
+        skipWhitespace()
+        if (cursor < length && text.startsWith(string, cursor)) {
+            skipCharacters(string.length)
+        } else {
+            reporter.report(Range(here(), here().apply { character += string.length }), "Expected '$string'")
+            skip()
+        }
+    }
+
+    private fun skipWhitespace() {
+        while (cursor < length) {
+            skip {
+                when (it) {
+                    ' ', '\t' -> skipCharacters()
+                    else -> return
+                }
+            }
+        }
+    }
+
+    private inline fun skip(action: (Char) -> Unit = { skipCharacters() }) {
+        when (val char = text[cursor]) {
+            '\n' -> {
+                cursor++
+                line++
+                character = 0
+            }
+            '\r' -> {
+                cursor++
+                if (cursor < length && text[cursor] == '\n') {
+                    cursor++
+                }
+                line++
+                character = 0
+            }
+            else -> action(char)
+        }
+    }
+
+    private fun skipCharacters(size: Int = 1) {
+        cursor += size
+        character += size
+    }
+
+    private inner class RangeContext(val start: Position) {
+        fun until(): Range = Range(start, here())
+    }
+
+    private inline fun <R> from(block: RangeContext.() -> R): R = RangeContext(here()).block()
+
+    private fun here(): Position = Position(line, character)
+}
+
 fun Core.stringify(): String = when (this) {
     is Core.Type -> "Type"
-    is Core.Func -> if (name.isEmpty()) "${param.stringify()} -> ${result.stringify()}" else "($name : ${param.stringify()}) -> ${result.stringify()}"
+    is Core.Func -> "Func $name : ${param.stringify()} -> ${result.stringify()}"
     is Core.FuncOf -> "{ $name -> ${result.stringify()} }"
     is Core.Call -> "${operator.stringify()}(${operand.stringify()})"
-    is Core.Closed -> "Closed(${element.stringify()})"
+    is Core.Closed -> "Closed ${element.stringify()}"
     is Core.Close -> "close { ${element.stringify()} }"
     is Core.Open -> "open { ${element.stringify()} }"
-    is Core.Let -> "let $name = ${init.stringify()} in ${body.stringify()})"
+    is Core.Let -> "let $name = ${init.stringify()}; ${body.stringify()})"
     is Core.Var -> name
     is Core.Hole -> "_"
 }
@@ -121,11 +288,6 @@ data class Ctx(val env: Env, val types: PersistentList<Pair<String, Lazy<Value>>
     )
 }
 
-class Reporter {
-    private val diagnostics: MutableList<Diagnostic> = mutableListOf()
-    fun report(range: Range, message: String) = diagnostics.add(Diagnostic(range, message))
-}
-
 class Elaborator(private val reporter: Reporter) {
     fun Ctx.elaborate(surface: Surface, type: Value? = null): Pair<Core, Value> = when {
         surface is Surface.Type && type is Value.Type? -> {
@@ -133,18 +295,18 @@ class Elaborator(private val reporter: Reporter) {
         }
         surface is Surface.Func && type is Value.Type? -> {
             val (param) = elaborate(surface.param, Value.Type)
-            val (result) = extend(surface.name, lazy { env.eval(param) }).elaborate(surface.result, Value.Type)
-            Core.Func(surface.name, param, result) to Value.Type
+            val (result) = extend(surface.name.text, lazy { env.eval(param) }).elaborate(surface.result, Value.Type)
+            Core.Func(surface.name.text, param, result) to Value.Type
         }
         surface is Surface.FuncOf && type == null -> {
-            val (result, _) = extend(surface.name, lazyOf(Value.Hole)).elaborate(surface.result)
-            Core.FuncOf(surface.name, result).also {
+            val (result, _) = extend(surface.name.text, lazyOf(Value.Hole)).elaborate(surface.result)
+            Core.FuncOf(surface.name.text, result).also {
                 cannotSynthesizeTypeOf(it, surface.range)
             } to Value.Hole
         }
         surface is Surface.FuncOf && type is Value.Func -> {
-            val (result) = extend(surface.name, type.param).elaborate(surface.result, type.result(lazyOf(Value.Var(type.name, env.size))))
-            Core.FuncOf(surface.name, result) to type
+            val (result) = extend(surface.name.text, type.param).elaborate(surface.result, type.result(lazyOf(Value.Var(type.name, env.size))))
+            Core.FuncOf(surface.name.text, result) to type
         }
         surface is Surface.Call && type == null -> {
             val (operator, operatorType) = elaborate(surface.operator)
@@ -181,17 +343,17 @@ class Elaborator(private val reporter: Reporter) {
         }
         surface is Surface.Let -> {
             val (init) = elaborate(surface.init, Value.Type)
-            val (body, bodyType) = extend(surface.name, lazy { env.eval(init) }).elaborate(surface.body, type)
-            Core.Let(surface.name, init, body) to bodyType
+            val (body, bodyType) = extend(surface.name.text, lazy { env.eval(init) }).elaborate(surface.body, type)
+            Core.Let(surface.name.text, init, body) to bodyType
         }
         surface is Surface.Var && type == null -> {
-            when (val level = types.indexOfLast { (name) -> name == surface.name }) {
+            when (val level = types.indexOfLast { (name) -> name == surface.name.text }) {
                 -1 -> {
-                    variableNotFound(surface.name, surface.range)
+                    variableNotFound(surface.name.text, surface.range)
                     Core.Hole to Value.Hole
                 }
                 else -> {
-                    Core.Var(surface.name, env.size - level - 1) to types[level].second.value
+                    Core.Var(surface.name.text, env.size - level - 1) to types[level].second.value
                 }
             }
         }
