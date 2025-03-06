@@ -1,0 +1,46 @@
+let id : Func (A : Type) -> Func (a : A) -> A =
+  { A -> { a -> a } };
+
+let extract
+  : Func (A : Closed { Type }) ->
+    Func (a : Closed { open { A } }) -> 
+    open { A }
+  = { A -> { a -> open { a } } };
+
+let duplicate
+  : Func (A : Closed { Type }) ->
+    Func (a : Closed { open { A } }) ->
+    Closed { Closed { open { A } } }
+  = { A -> { a -> close { close { open { a } } } } };
+
+let <*>
+  : Func (A : Closed { Type }) ->
+    Func (B : Closed { Type }) ->
+    Func (f : Closed { (a : open { A }) -> open { B } }) ->
+    Func (a : Closed { open { A } }) ->
+    Closed { open { B } }
+  = { A -> { B -> { f -> { a -> close { open { f }(open { a }) } } } } };
+
+# `open` synthesis: a => Closed A <= A ~> open { a }
+
+let extract
+  : Func (A : Closed { Type }) ->
+    Func (a : Closed { A }) ->
+    A
+  = { A -> { a -> a } };
+
+let duplicate
+  : Func (A : Closed { Type }) ->
+    Func (a : Closed { A }) ->
+    Closed { Closed { A } }
+  = { A -> { a -> close { close { a } } } };
+
+let <*>
+  : Func (A : Closed { Type }) ->
+    Func (B : Closed { Type }) ->
+    Func (f : Closed { (a : A) -> B }) ->
+    Func (a : Closed { A }) ->
+    Closed { B }
+  = { A -> { B -> { f -> { a -> close { f(a) } } } } };
+
+Type
