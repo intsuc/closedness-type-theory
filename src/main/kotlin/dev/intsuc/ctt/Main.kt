@@ -13,10 +13,14 @@ fun main(args: Array<String>) = Ctt.main(args)
 
 private object Ctt : CliktCommand() {
     init {
-        subcommands()
+        subcommands(Lsp)
     }
 
     override fun run() = Unit
+}
+
+private object Lsp : CliktCommand() {
+    override fun run() = CttLanguageServer.launch()
 }
 
 sealed class Surface {
