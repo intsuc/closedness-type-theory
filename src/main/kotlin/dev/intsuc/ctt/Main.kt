@@ -111,15 +111,21 @@ class Parser(private val reporter: Reporter, private val text: String) {
                             "Func" -> {
                                 expect("(")
                                 val name = parseName()
-                                expect(":")
-                                val param = parseSurface()
+                                val param = if (name.text.isEmpty()) {
+                                    parseSurface()
+                                } else {
+                                    expect(":")
+                                    parseSurface()
+                                }
                                 expect(")")
                                 expect("->")
                                 val result = parseSurface()
                                 Surface.Func(name, param, result, until())
                             }
                             "Closed" -> {
+                                expect("{")
                                 val element = parseSurface()
+                                expect("}")
                                 Surface.Closed(element, until())
                             }
                             "close" -> {
@@ -231,10 +237,10 @@ class Parser(private val reporter: Reporter, private val text: String) {
 
 fun Core.stringify(): String = when (this) {
     is Core.Type -> "Type"
-    is Core.Func -> "Func $name : ${param.stringify()} -> ${result.stringify()}"
+    is Core.Func -> "Func ($name : ${param.stringify()}) -> ${result.stringify()}"
     is Core.FuncOf -> "{ $name -> ${result.stringify()} }"
     is Core.Call -> "${operator.stringify()}(${operand.stringify()})"
-    is Core.Closed -> "Closed ${element.stringify()}"
+    is Core.Closed -> "Closed { ${element.stringify()} }"
     is Core.Close -> "close { ${element.stringify()} }"
     is Core.Open -> "open { ${element.stringify()} }"
     is Core.Let -> "let $name = ${init.stringify()}; ${body.stringify()})"
