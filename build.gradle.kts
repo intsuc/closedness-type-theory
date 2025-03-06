@@ -23,5 +23,6 @@ kotlin {
 }
 
 application {
+    applicationName = "ctt"
     mainClass = "dev.intsuc.ctt.MainKt"
 }

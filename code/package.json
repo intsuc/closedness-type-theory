@@ -1,0 +1,64 @@
+{
+  "name": "ctt",
+  "displayName": "ctt",
+  "description": "",
+  "version": "0.0.0",
+  "publisher": "intsuc",
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "grammars": [
+      {
+        "language": "ctt",
+        "scopeName": "source.ctt",
+        "path": "./dist/grammar.json"
+      }
+    ],
+    "languages": [
+      {
+        "id": "ctt",
+        "aliases": [
+          "ctt"
+        ],
+        "extensions": [
+          ".ctt"
+        ],
+        "configuration": "./dist/language-configuration.json"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "watch": "pnpm run \"/^watch:.*/\"",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --watch --project tsconfig.json",
+    "package": "pnpm run generate && pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "check-types": "tsc",
+    "lint": "eslint src",
+    "generate": "node gen/main.mts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.96.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.17.0",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.19.1"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
