@@ -9,6 +9,7 @@ repositories {
 
 dependencies {
     implementation(libs.clikt)
+    implementation(libs.kotlinxCollectionsImmutable)
     implementation(libs.lsp4j)
     testImplementation(kotlin("test"))
 }
