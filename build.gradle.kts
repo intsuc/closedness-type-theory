@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.jvm)
+    application
 }
 
 repositories {
@@ -18,4 +19,8 @@ tasks.test {
 
 kotlin {
     jvmToolchain(23)
+}
+
+application {
+    mainClass = "dev.intsuc.ctt.MainKt"
 }
